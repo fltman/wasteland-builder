@@ -16,6 +16,20 @@ export function setGroundReference(s,height){
   // curb. Its world height stays continuous and the springs lift it afterward.
   s.heave-=height-s.y;s.y=height;
 }
+// Follow the ground under the car between probes. Dropping is limited (a fast car follows a downhill
+// road without hopping) and a step up is limited to a curb, plus the climb the slope allows over the
+// horizontal distance driven since the last probe: a fixed cap let a fast car on a hill fall behind
+// the surface and sink into it.
+export function followGround(s,ground,travel=0){
+  setGroundReference(s,s.y+clamp(ground-s.y,-.75,.4+1.2*travel));
+}
+// Ground height under the chassis centre from the wheel heights (fits the plane along the car, as stepSuspension does).
+export function chassisGround(contacts,heights){
+  const n=contacts.length,meanZ=contacts.reduce((a,[,z])=>a+z,0)/n,mean=heights.reduce((a,h)=>a+h,0)/n;
+  let slope=0,square=0;
+  contacts.forEach(([,z],i)=>{slope+=(z-meanZ)*(heights[i]-mean);square+=(z-meanZ)**2;});
+  return mean-(square?slope/square:0)*meanZ;
+}
 export function stepSuspension(s,dt,spec,heights,previousSpeed,previousHeading){
   const truck=spec.mass>4000,frequency=truck?9.5:spec.mass<1500?14:12;
   const spring=(value,velocity,target,omega,damping)=>{

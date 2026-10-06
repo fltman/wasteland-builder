@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createCarState, stepCar, angleDiff, clamp, VEHICLES, segmentCircle,carContact,kineticEnergy,vehicleImpact,applyImpactVelocity } from './physics.js';
 import { findRecoveryPose } from './recovery.js';
 import {createWeapons} from './weapons.js';
-import {wheelContacts,roadProfile,stepSuspension,setGroundReference} from './suspension.js';
+import {wheelContacts,roadProfile,stepSuspension,setGroundReference,followGround,chassisGround} from './suspension.js';
 import {wallImpact} from './collision-response.js';
 import {drivingCorridorClear,enemyDrivingInput,trackEnemyProgress} from './ai-driving.js';
 import {collisionMaterial} from './collision-audio.js';
@@ -13,6 +13,7 @@ export function createGame({scene,city,network,vehicles,effects,audio,hud,onEnd}
   const terrainY=(x,z)=>city.heightAt?.(x,z)??.1;   // the ground before its tile has loaded
   const g={player:createCarState({x:CITY.spawn.x,z:CITY.spawn.z,heading:CITY.spawn.heading}),vehicle:'interceptor',mode:'survival',health:130,
     enemies:[],pickups:[],wave:1,waveDelay:0,scrap:0,kills:0,time:0,heat:0,overheated:false,ended:false};
+  const contactProbe={x:0,z:0};   // where the car was at the last wheel probe
   let playerMesh=null,gunTimer=0,groundTimer=0,dustTimer=0,ramCooldown=0,waterTimer=0,critical=false,tapFire=0;
   let lastBoost=false,progressTime=0,progressDistance=0,blockedInWindow=false,contactTimer=0,playerContacts=[.1,.1,.1,.1],sessionSerial=0;
   const navEdges=new Map();let navRevision=-1;
@@ -336,6 +337,8 @@ export function createGame({scene,city,network,vehicles,effects,audio,hud,onEnd}
     input={...input,fire:input.fire||tapFire>0,offroad:onroad?onroad.d>onroad.road.w/2+2:false};tapFire=Math.max(0,tapFire-dt);
     const before={x:g.player.x,z:g.player.z,speed:g.player.speed,heading:g.player.heading};
     const blocked=drive(g.player,input,dt,VEHICLES[g.vehicle],true);
+    // Between wheel probes the ground reference rides the slope the wheels last measured (rise per metre ahead).
+    setGroundReference(g.player,g.player.y+(g.player.grade||0)*Math.sign(g.player.speed)*Math.hypot(g.player.x-before.x,g.player.z-before.z));
     if((input.throttle||input.brake)&&!input.handbrake){
       progressTime+=dt;progressDistance+=Math.hypot(g.player.x-before.x,g.player.z-before.z);blockedInWindow||=blocked;
       if(progressTime>=.5){g.stuckTime=progressDistance<.35&&(blockedInWindow||Math.abs(g.player.speed)<1)?g.stuckTime+progressTime:0;progressTime=progressDistance=0;blockedInWindow=false;}
@@ -348,7 +351,6 @@ export function createGame({scene,city,network,vehicles,effects,audio,hud,onEnd}
     if(!input.fire||g.overheated)g.heat=Math.max(0,g.heat-dt*.27);
     if(g.overheated&&g.heat<.2)g.overheated=false;
     if((groundTimer-=dt)<=0){groundTimer=.07;
-      const y=city.groundAt(g.player.x,g.player.z,g.player.y);if(y!==null)setGroundReference(g.player,g.player.y+clamp(y-g.player.y,-.75,.4));   // a fast car follows a downhill road
       if(!network.onLand(g.player.x,g.player.z))waterTimer+=.07;else waterTimer=0;
       if(waterTimer>1.5){g.stuckTime=6;}
     }
@@ -359,10 +361,16 @@ export function createGame({scene,city,network,vehicles,effects,audio,hud,onEnd}
     }
     if((contactTimer-=dt)<=0){
       contactTimer=1/35;
-      playerContacts=wheelContacts(VEHICLES[g.vehicle]).map(([x,z])=>{
+      let missed=false;const raw=[];
+      const wheels=wheelContacts(VEHICLES[g.vehicle]);
+      playerContacts=wheels.map(([x,z])=>{
         const px=g.player.x+Math.cos(g.player.heading)*x+Math.sin(g.player.heading)*z,pz=g.player.z-Math.sin(g.player.heading)*x+Math.cos(g.player.heading)*z;
-        return (city.groundAt(px,pz,g.player.y)??g.player.y)+roadProfile(px,pz,input.offroad);
+        const ground=city.groundAt(px,pz,g.player.y);if(ground===null)missed=true;raw.push(ground??0);
+        return (ground??g.player.y)+roadProfile(px,pz,input.offroad);
       });
+      // The wheels probe the ground far more often than the centre ray; the chassis reference follows them, so a fast climb cannot outrun it.
+      if(!missed)followGround(g.player,chassisGround(wheels,raw),Math.min(3,Math.hypot(g.player.x-contactProbe.x,g.player.z-contactProbe.z)));
+      contactProbe.x=g.player.x;contactProbe.z=g.player.z;
     }
     stepSuspension(g.player,dt,VEHICLES[g.vehicle],playerContacts,before.speed,before.heading);
     for(const p of g.pickups){
