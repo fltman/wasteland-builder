@@ -11,7 +11,7 @@ glTF -Z forward, Y up; metres; wheel pivots Wheel_FL/FR/RL/RR spin about X):
 - a boxy 740 sedan body lowered to 10 cm ground clearance on polished multi-spoke rims;
 - black bumpers, a chin spoiler, side mouldings, the slanted Volvo grille bar, rectangular headlamps;
 - wrap-round tail lamps, a red slow-vehicle triangle (LGF) on the boot lid and a number plate;
-- a big white vinyl text across the rear window;
+- a big white vinyl text across the rear window ("|" for a second line);
 - an interior seen through the tinted glass: velour seats, a dashboard, red LED strips in the
   footwells and along the dash, fuzzy dice from the mirror, and a parcel shelf full of speakers (two
   subwoofers, two 6x9s) with LED rings (materials named "Interior …", which the game hides in the
@@ -179,9 +179,10 @@ def loft(name, rings, mat, bevel=0.0):
     return mesh_obj(name, verts, faces, mat, bevel)
 
 
-def text(name, body, size, mat, font=None, extrude=0.0015):
+def text(name, body, size, mat, font=None, extrude=0.0015, space_line=1.0):
     curve = bpy.data.curves.new(name, 'FONT')
     curve.body, curve.size, curve.align_x, curve.align_y, curve.extrude = body, size, 'CENTER', 'CENTER', extrude
+    curve.space_line = space_line
     if font:
         curve.font = font
     o = bpy.data.objects.new(name, curve)
@@ -365,17 +366,24 @@ front_text = text('Plate text', spec.get('plate', 'EPA 030'), 0.075, PLATE_TEXT,
 front_text.rotation_euler = (math.pi / 2, 0, math.pi)
 front_text.location = (-0.02, 2.523, 0.307)
 
-# The rear window decal: big white letters across the top of the glass, readable from behind.
-message = spec.get('rear_window', '').strip()
-if message:
+# The rear window decal: big white letters across the glass, readable from behind. "|" or a newline
+# breaks the text; a long text with spaces is split into two balanced lines.
+lines = [part.strip() for part in spec.get('rear_window', '').replace('|', '\n').split('\n') if part.strip()]
+if len(lines) == 1 and len(lines[0]) > 14 and ' ' in lines[0]:
+    words = lines[0].split()
+    cut = min(range(1, len(words)), key=lambda i: abs(len(' '.join(words[:i])) - len(' '.join(words[i:]))))
+    lines = [' '.join(words[:cut]), ' '.join(words[cut:])]
+if lines:
     a, b, c, d = rear_window
-    v = 0.66
+    v = 0.66 if len(lines) == 1 else 0.62
     left, right = on_face(a, b, c, d, 0.08, v), on_face(a, b, c, d, 0.92, v)
     width = (right - left).length * 0.97
+    glass_height = (on_face(a, b, c, d, 0.5, 0.93) - on_face(a, b, c, d, 0.5, 0.08)).length
     up = (on_face(a, b, c, d, 0.5, 0.9) - on_face(a, b, c, d, 0.5, 0.4)).normalized()
     normal = outward((Vector(b) - Vector(a)).cross(Vector(d) - Vector(a)).normalized(), on_face(a, b, c, d, 0.5, 0.5))
-    decal = text('Rear window decal', message, 0.1, VINYL, BOLD, extrude=0.0008)
-    decal.scale = (width / max(decal.dimensions.x, 1e-6),) * 3
+    decal = text('Rear window decal', '\n'.join(lines), 0.1, VINYL, BOLD, extrude=0.0008, space_line=0.85)
+    fit = min(width / max(decal.dimensions.x, 1e-6), glass_height * 0.62 / max(decal.dimensions.y, 1e-6))
+    decal.scale = (fit,) * 3
     bpy.context.view_layer.objects.active = decal
     decal.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
@@ -388,7 +396,7 @@ if message:
     decal.location = centre
     line = box('Rear window decal underline', (0, 0, 0), (width * 0.92, 0.012, 0.0015), VINYL, 0)
     line.rotation_euler = (tilt, 0, 0)
-    line.location = centre - up * (decal.dimensions.y * 0.75)
+    line.location = centre - up * (decal.dimensions.y * 0.5 + 0.055)
 for x in (-0.50, -0.62):
     cyl('Exhaust tip chrome', (x, -2.55, 0.20), 0.05, 0.18, CHROME, 'Y', 18)
     cyl('Exhaust tip black', (x, -2.64, 0.20), 0.04, 0.01, BLACK, 'Y', 18)

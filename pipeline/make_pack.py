@@ -77,7 +77,7 @@ def bonus_vehicles(theme, folder, pack):
         models.mkdir(exist_ok=True)
         shutil.copy2(glb, models / f'{vid}.glb')
         spec = {**kind['spec'], **{k: v[k] for k in ('name', 'number', 'description') if v.get(k)}}
-        cabin = {**kind['cabin'], **{k: v[k] for k in ('led', 'dice', 'speaker_led') if v.get(k)}}
+        cabin = {**kind['cabin'], **{k: v[k] for k in ('led', 'dice', 'speaker_led', 'plate') if v.get(k)}}
         entry = {'id': vid, 'model': f'city/vehicles/{vid}.glb', 'spec': spec, 'cabin': cabin, 'music': None}
         music = folder / 'media' / 'vehicles' / vid / 'music'
         tracks = sorted(music.glob('*.mp3')) if music.exists() else []
