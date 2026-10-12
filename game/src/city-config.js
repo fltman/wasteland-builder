@@ -1,3 +1,4 @@
+import {VEHICLES} from './physics.js';
 // The installed city pack (public/city/, written by wasteland-builder): names, texts, spawn, labels and media.
 // Everything place-specific in the game reads from CITY so the same engine runs any generated town.
 export const CITY={
@@ -5,7 +6,7 @@ export const CITY={
   text:{eyebrow:'THE STREETS ARE YOURS. KEEP THEM.',tagline:'Same streets. New rules.',intro:'Take an armored machine into the streets.<br>Hunt the raiders. Scavenge the wrecks. Make it home.',
     win_eyebrow:'THE CITY IS YOURS',start_roam:'DRIVE THE CITY',explore:'EXPLORE THE CITY',loading:'Loading the city…',ready:'The city is ready',map_title:'TACTICAL MAP',description:''},
   room:'WASTELAND',spawn:{x:0,z:0,heading:0},bounds:{minX:-600,maxX:600,minZ:-600,maxZ:600},
-  labels:[],districts:[],squares:[],crates:[],fires:[],splash:null,voices:[],music:null,attribution:'Map data © OpenStreetMap contributors (ODbL)'
+  labels:[],districts:[],squares:[],crates:[],fires:[],splash:null,voices:[],music:null,bonus_vehicles:[],attribution:'Map data © OpenStreetMap contributors (ODbL)'
 };
 
 export async function loadCityConfig(){
@@ -13,6 +14,8 @@ export async function loadCityConfig(){
   if(!response.ok)throw new Error('No city is installed. Build one with "python3 wasteland.py build <place>" and start it with "python3 wasteland.py play <place>".');
   const config=await response.json();
   Object.assign(CITY,config,{text:{...CITY.text,...(config.text||{})}});
+  // A city can bring bonus vehicles (theme.json "bonus_vehicles"): spec, cabin and model come with the pack.
+  for(const v of CITY.bonus_vehicles||[])if(v?.id&&v.spec&&!VEHICLES[v.id])VEHICLES[v.id]={...v.spec,cabin:v.cabin||null,bonus:true};
   applyCityTexts();
   return CITY;
 }

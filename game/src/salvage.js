@@ -79,9 +79,9 @@ export function addSalvageDetails(root,id){
   });
 }
 
-export function addHeadlights(root){
-  for(const x of [-.73,.73]){
-    const lamp=new THREE.SpotLight(0xffbf75,6,25,.3,.65,2);lamp.position.set(x,.97,-2.35);
+export function addHeadlights(root,positions=[[-.73,.97,-2.35],[.73,.97,-2.35]]){
+  for(const [x,y,z] of positions){
+    const lamp=new THREE.SpotLight(0xffbf75,6,25,.3,.65,2);lamp.position.set(x,y,z);
     lamp.target.position.set(x,.18,-30);root.add(lamp,lamp.target);
   }
   // Soft transparent beam volume: light catching the airborne sand.
@@ -90,5 +90,5 @@ export function addHeadlights(root){
     vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader:'varying vec2 vUv;void main(){float fade=pow(vUv.y,2.0)*(1.0-vUv.y);gl_FragColor=vec4(0.45,0.28,0.1,fade*0.045);}'
   });
-  for(const x of [-.73,.73]){const beam=new THREE.Mesh(geometry,mat);beam.rotation.x=Math.PI/2;beam.position.set(x,.73,-14.8);root.add(beam);}
+  for(const [x,y,z] of positions){const beam=new THREE.Mesh(geometry,mat);beam.rotation.x=Math.PI/2;beam.position.set(x,y-.24,z-12.45);root.add(beam);}
 }

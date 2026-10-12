@@ -2,7 +2,8 @@ import {clamp,angleDiff} from './physics.js';
 
 export const WHEEL_CONTACTS=[[-.99,-1.48],[.99,-1.48],[-.99,1.48],[.99,1.48]];
 export function wheelContacts(spec){
-  const front=spec.mass>4000?1.68:spec.mass<1500?1.17:1.44,track=spec.mass>4000?1.13:spec.mass<1500?1.11:1.03;
+  // A city's bonus vehicle carries its own [track, half wheelbase]; the built-in three go by mass.
+  const [track,front]=spec.axle||[spec.mass>4000?1.13:spec.mass<1500?1.11:1.03,spec.mass>4000?1.68:spec.mass<1500?1.17:1.44];
   const contacts=WHEEL_CONTACTS.map(([x,z])=>[Math.sign(x)*track,Math.sign(z)*front]);
   if(spec.mass>4000)contacts.push([-track,2.54],[track,2.54]);
   return contacts;

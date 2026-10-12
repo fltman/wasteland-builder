@@ -9,7 +9,7 @@ export async function loadWeathering(){
 export function weatherMaterial(material,texture,vehicle=false){
   if(!texture||!material.isMeshStandardMaterial||material.userData.wasteland)return;
   material.userData.wasteland=true;
-  if(/lamp|insignia/i.test(material.name))return;
+  if(/lamp|insignia|clean/i.test(material.name))return;   // "clean": a cherished car (a city's bonus vehicle)
   if(/nitro/i.test(material.name))material.color.set(0x405044);
   if(vehicle){
     if(/graphite/i.test(material.name))material.color.set(0x343b42);

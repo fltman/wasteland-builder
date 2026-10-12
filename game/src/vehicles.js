@@ -63,15 +63,38 @@ function optimize(root){
   root.traverse(o=>{if(o.isMesh){o.castShadow=o.receiveShadow=true;}});
   return root;
 }
+// A rotating blue beacon on the roof (spec.beacon = [x, y, z] in car space): a translucent dome, a
+// reflector turning inside it and two soft additive beams that sweep the street.
+const beaconBeam=new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'varying vec2 vUv;void main(){float fade=pow(vUv.y,2.2);gl_FragColor=vec4(0.12,0.32,1.0,fade*0.13);}'});
+function addBeacon(root,[x,y,z]){
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(.11,.12,.04,20),new THREE.MeshStandardMaterial({name:'Beacon base',color:0x111111,roughness:.5,metalness:.4}));
+  base.position.set(x,y+.02,z);root.add(base);
+  const dome=new THREE.Mesh(new THREE.CylinderGeometry(.085,.1,.17,24,1,false),new THREE.MeshStandardMaterial({name:'Beacon dome lamp',color:0x1d4dff,emissive:0x2a5cff,emissiveIntensity:2,transparent:true,opacity:.85,roughness:.15}));
+  dome.position.set(x,y+.125,z);root.add(dome);
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(.085,20,8,0,Math.PI*2,0,Math.PI/2),dome.material);cap.position.set(x,y+.21,z);root.add(cap);
+  const spin=new THREE.Group();spin.position.set(x,y+.12,z);root.add(spin);
+  const mirror=new THREE.Mesh(new THREE.BoxGeometry(.11,.08,.01),new THREE.MeshBasicMaterial({color:0xbfd4ff}));spin.add(mirror);
+  for(const a of [0,Math.PI]){const beam=new THREE.Mesh(new THREE.ConeGeometry(.9,7,16,1,true),beaconBeam);beam.rotation.z=Math.PI/2;beam.position.x=3.5;const arm=new THREE.Group();arm.rotation.y=a;arm.add(beam);spin.add(arm);}
+  root.userData.beacon={spin,dome};
+}
 export async function loadVehicles(loader,weathering=null){
   const templates={};
-  for(const id of ['interceptor','raider','wartruck']){
-    const gltf=await loader.loadAsync(`models/${id}.glb`);let salvage=false;gltf.scene.traverse(o=>{if(o.userData.salvage_v2)salvage=true;});
+  // The three battle cars, then any bonus vehicle the installed city brings (city/vehicles/<id>.glb).
+  const bonus=new Map((CITY.bonus_vehicles||[]).filter(v=>VEHICLES[v.id]).map(v=>[v.id,v.model]));
+  for(const id of ['interceptor','raider','wartruck',...bonus.keys()]){
+    let gltf;
+    try{gltf=await loader.loadAsync(bonus.get(id)||`models/${id}.glb`);}
+    catch(error){if(bonus.has(id)){console.warn('Bonus vehicle',id,'could not load',error);delete VEHICLES[id];continue;}throw error;}let salvage=false;gltf.scene.traverse(o=>{if(o.userData.salvage_v2)salvage=true;});
     if(!salvage)addSalvageDetails(gltf.scene,id);
     const upgrade=prepareVehicleDesign(gltf.scene,id);templates[id]=optimize(gltf.scene);
     if(upgrade)templates[id]=optimize(finishVehicleDesign(templates[id],id));
     templates[id].traverse(o=>{if(o.isMesh)for(const mat of [o.material].flat())weatherMaterial(mat,weathering,true);});
     cityInsignia(templates[id]);
+    // LED rings round a bonus car's speakers ("… speaker LED …" materials) pulse with the music.
+    const pulse=new Set();templates[id].traverse(o=>{if(o.isMesh&&/speaker LED/i.test(o.material?.name||''))pulse.add(o.material);});
+    templates[id].userData.pulse=[...pulse].map(material=>({material,base:material.emissiveIntensity||1}));
   }
   const flameMat=new THREE.MeshBasicMaterial({color:0x8ae7ff,transparent:true,opacity:.8,depthWrite:false});
   const flashMat=new THREE.MeshBasicMaterial({color:0xffcd75});
@@ -84,23 +107,27 @@ export async function loadVehicles(loader,weathering=null){
       if(!w)return null;const spin=new THREE.Group();
       for(const child of [...w.children])spin.add(child);w.add(spin);return spin;
     });
-    const flames=[];
-    for(const x of [-.74,.74]){
+    const spec=VEHICLES[id],flames=[];
+    for(const [x,y,z] of spec.exhaust||[[-.74,.75,id==='raider'?2.1:2.5],[.74,.75,id==='raider'?2.1:2.5]]){
       const flame=new THREE.Mesh(new THREE.ConeGeometry(.12,.7,6),flameMat);
-      flame.rotation.x=-Math.PI/2;flame.position.set(x,.75,id==='raider'?2.1:2.5);flame.visible=false;root.add(flame);flames.push(flame);
+      flame.rotation.x=-Math.PI/2;flame.position.set(x,y,z);flame.visible=false;root.add(flame);flames.push(flame);
     }
-    const flash=new THREE.Mesh(new THREE.SphereGeometry(.19,6,5),flashMat);flash.position.set(0,id==='wartruck'?2.94:id==='raider'?2.05:1.85,id==='wartruck'?-2.29:id==='raider'?-1.0:-1.48);flash.visible=false;root.add(flash);
+    const flash=new THREE.Mesh(new THREE.SphereGeometry(.19,6,5),flashMat);
+    flash.position.fromArray(spec.muzzle||[0,id==='wartruck'?2.94:id==='raider'?2.05:1.85,id==='wartruck'?-2.29:id==='raider'?-1.0:-1.48]);flash.visible=false;root.add(flash);
     root.userData={wheels,spins,flames,flash,id,roll:0,wheelRest:wheels.map(w=>w?.position.clone())};root.rotation.order='YXZ';
     const shadow=new THREE.Mesh(new THREE.PlaneGeometry(VEHICLES[id].width,VEHICLES[id].length*.94),new THREE.ShaderMaterial({transparent:true,depthWrite:false,
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader:'varying vec2 vUv;void main(){vec2 p=(vUv-.5)*2.0;float a=(1.0-smoothstep(.3,1.0,length(p)))*.58;gl_FragColor=vec4(0.015,0.011,0.008,a);}'
     }));shadow.rotation.x=-Math.PI/2;shadow.position.y=.045;root.add(shadow);
-    if(player)addHeadlights(root);
+    if(player)addHeadlights(root,spec.headlights);
+    if(spec.beacon)addBeacon(root,spec.beacon);
     return root;
   }
+  let beat=0;
+  function setBeat(level){beat=level||0;for(const t of Object.values(templates))for(const p of t.userData.pulse||[])p.material.emissiveIntensity=p.base*(.25+beat*1.9);}
   function update(root,s,dt){
     root.position.set(s.x,s.y+(s.heave||0),s.z);root.rotation.set(s.pitch||0,s.heading,s.roll||0);
-    root.userData.roll+=s.speed*dt/(root.userData.id==='wartruck'?.56:root.userData.id==='raider'?.5:.45);
+    const id=root.userData.id;root.userData.roll+=s.speed*dt/(VEHICLES[id]?.wheelRadius||(id==='wartruck'?.56:id==='raider'?.5:.45));
     for(let i=0;i<root.userData.wheels.length;i++){
       const w=root.userData.wheels[i];if(!w)continue;
       // Positive input turns the car right (negative Three.js yaw).
@@ -110,6 +137,8 @@ export async function loadVehicles(loader,weathering=null){
       root.userData.spins[i].rotation.x=-root.userData.roll;
     }
     root.userData.flames.forEach(f=>{f.visible=s.boosting;f.scale.y=.8+Math.random()*.6;});
+    const beacon=root.userData.beacon;
+    if(beacon){beacon.spin.rotation.y-=dt*7.5;const flash=.55+.45*Math.max(0,Math.sin(performance.now()*.0125));beacon.dome.material.emissiveIntensity=1.2+flash*2.6;}
   }
   function damage(root,severity){
     if(!root)return;severity=Math.min(1,Math.max(0,severity));
@@ -117,7 +146,7 @@ export async function loadVehicles(loader,weathering=null){
     if(!root.userData.crumple){
       root.userData.crumple=[];
       for(const mesh of root.children){
-        if(!mesh.isMesh||!mesh.geometry.attributes.position||!/steel|rust|graphite|ochre|oxide/i.test(mesh.material.name))continue;
+        if(!mesh.isMesh||!mesh.geometry.attributes.position||!/steel|rust|graphite|ochre|oxide|paint/i.test(mesh.material.name))continue;
         mesh.geometry=mesh.geometry.clone();root.userData.crumple.push({mesh,original:mesh.geometry.attributes.position.array.slice()});
       }
     }
@@ -139,11 +168,12 @@ export async function loadVehicles(loader,weathering=null){
     const cockpit=root.userData.cockpit;
     if(root.userData.inside!==inside){
       root.userData.inside=inside;cockpit?.set(inside);
-      root.traverse(o=>{if(o.isMesh&&/glass/i.test(o.material?.name||''))o.visible=!inside;});
+      // The glass, and a bonus car's own interior ("Interior …" materials), give way to the cockpit.
+      root.traverse(o=>{if(o.isMesh&&/glass|^Interior/i.test(o.material?.name||''))o.visible=!inside;});
     }
-    if(inside&&state)cockpit?.update(state,game);
+    if(inside&&state)cockpit?.update(state,game,beat);
   }
-  return {create,update,damage,setCockpit,templates};
+  return {create,update,damage,setCockpit,setBeat,templates};
 }
 
 // The Blender models carry the original 'KALMAR' rear lettering. Hide it and paint the installed city's

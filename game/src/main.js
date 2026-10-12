@@ -28,7 +28,7 @@ import {collisionMaterial} from './collision-audio.js';
 import {createResolutionGovernor} from './resolution.js';
 import {createBVHBuilder} from './bvh-builder.js';
 import {createCityBatches} from './city-batches.js';
-import {CABINS} from './cockpit.js';
+import {cabinOf} from './cockpit.js';
 import {CITY,loadCityConfig} from './city-config.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree=computeBoundsTree;
@@ -55,6 +55,7 @@ function progress(p,text){$('load-percent').textContent=Math.round(p*100)+'%';$(
 function selectVehicle(id){
   vehicle=id;const spec=VEHICLES[id];
   if(preview&&state==='garage')preview.show(id);
+  audio?.setVehicle?.(id);
   document.querySelectorAll('.vehicle').forEach(b=>b.classList.toggle('active',b.dataset.vehicle===id));
   $('rig-name').textContent=spec.name;$('rig-number').textContent='NO. '+spec.number;$('rig-description').textContent=spec.description;
   $('rig-stats').replaceChildren();
@@ -64,6 +65,18 @@ function selectVehicle(id){
   }
 }
 document.querySelectorAll('.vehicle').forEach(b=>b.addEventListener('click',()=>selectVehicle(b.dataset.vehicle)));
+// Bonus vehicles of the installed city join the picker (after the city config has loaded).
+function addBonusVehicles(){
+  const picker=document.querySelector('.vehicle-picker');if(!picker)return;
+  for(const v of CITY.bonus_vehicles||[]){
+    if(!VEHICLES[v.id]||picker.querySelector(`[data-vehicle="${v.id}"]`))continue;
+    const b=document.createElement('button');b.className='vehicle bonus';b.dataset.vehicle=v.id;
+    const number=document.createElement('span');number.textContent=VEHICLES[v.id].number;b.append(number,VEHICLES[v.id].name);
+    b.title='Bonus vehicle';b.addEventListener('click',()=>selectVehicle(v.id));picker.append(b);
+  }
+  const count=picker.querySelectorAll('.vehicle').length,label=document.querySelector('.rig-top span');
+  if(label)label.textContent=`YOUR MACHINE / ${count} CLASSES`;
+}
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{
   mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(el=>el.classList.toggle('active',el===b));
   $('mode-description').textContent=mode==='survival'?'Survive three waves. Clear every raider. Own the city.':mode==='arena'?'Battle other drivers. Five seconds to respawn. Every street is open.':'Every street is open. Take your time. Find your own route.';
@@ -176,7 +189,7 @@ function updateCamera(dt,s,controls){
   if(view==='cockpit'){
     // Ride with the chassis: full heading and pitch, softened roll, and a small glance into turns.
     const car=game.playerMesh;car.updateMatrixWorld();
-    camera.position.copy(cockpitEye.fromArray(CABINS[game.state.vehicle].eye)).applyMatrix4(car.matrixWorld);
+    camera.position.copy(cockpitEye.fromArray(cabinOf(game.state.vehicle).eye)).applyMatrix4(car.matrixWorld);
     cockpitGlance+=(-(s.steer||0)*.14-cockpitGlance)*(1-Math.exp(-5*dt));
     // A portrait phone sees a tall, narrow slice: lift the gaze so the road, not the dashboard, fills it.
     cockpitTurn.set((s.pitch||0)*.85+(camera.aspect<1?.09:0),s.heading+(back<0?Math.PI:0)+cockpitGlance,(s.roll||0)*.55);camera.quaternion.setFromEuler(cockpitTurn);
@@ -194,6 +207,7 @@ function updateCamera(dt,s,controls){
     safeCam.set(s.x+fx*6*back,s.y+1.1,s.z+fz*6*back);camera.lookAt(safeCam);
   }
   // Inside the car a wider lens keeps the pillars from crowding the road.
+  vehicles.setBeat(audio?.level?.());
   vehicles.setCockpit(game.playerMesh,view==='cockpit',s,game.state);
   const targetFov=(view==='cockpit'?(camera.aspect<1?-4:8):0)+(s.boosting?78:Math.min(72,63+Math.abs(s.speed)*.13));
   camera.fov+=(targetFov-camera.fov)*(1-Math.exp(-3*dt));camera.updateProjectionMatrix();
@@ -275,7 +289,7 @@ async function boot(){
     MeshoptDecoder.useWorkers(2);
     const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     progress(.02,'Reading the city…');
-    await loadCityConfig();Object.assign(spawn,{x:CITY.spawn.x,z:CITY.spawn.z});
+    await loadCityConfig();Object.assign(spawn,{x:CITY.spawn.x,z:CITY.spawn.z});addBonusVehicles();
     progress(.05,'Reading the street network…');
     const map=await fetch('city/map.json').then(r=>{if(!r.ok)throw new Error('City map is missing. Build a city with: python3 wasteland.py build <place>');return r.json();});
     network=createRoadNetwork(map);hud=createHUD(network);
@@ -283,7 +297,7 @@ async function boot(){
     const weathering=await loadWeathering();vehicles=await loadVehicles(loader,weathering);
     preview=createGaragePreview(renderer,vehicles,scene.environment,$('garage-preview'),$('game'));
     progress(.2,CITY.text.loading);
-    audio=await createAudio();
+    audio=await createAudio();audio.setVehicle(vehicle);
     if(audio.musicTitle)$('radio-title').textContent=`1/${audio.trackCount} · ${audio.musicTitle.toUpperCase()}`;
     city=await createCity(scene,loader,renderer,{lite:touch,weathering,buildBVH:createBVHBuilder(),// Opt-in until inserting streamed tiles costs less than it saves (see deploy/README.md).
       batches:params.has('batch')?createCityBatches(scene):null,lod:!params.has('nolod'),heightAt:network.heightAt,onProgress:p=>progress(.35+p*.6,'Preparing the streets…')});

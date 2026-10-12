@@ -33,6 +33,10 @@ def default_theme(place, city):
         'room': name.upper().replace(' ', '')[:16],
         '_map_labels_help': 'Extra tactical-map labels, shown first: a landmark/place name from facts, or {"name": …, "lat": …, "lon": …}.',
         'map_labels': [],
+        '_bonus_vehicles_help': 'Extra cars in the garage: [{"id": "epa", "model": "volvo740", "name": …, "number": …, "description": …, '
+                                '"paint": "#7d1416", "rear_window": "text on the rear window", "plate": "ABC 123", "dice": "#hex", "led": "#hex"}]. '
+                                'Its own radio: python3 wasteland.py music <slug> --vehicle <id> --add song.mp3.',
+        'bonus_vehicles': [],
         'text': {
             'eyebrow': 'THE STREETS ARE YOURS. KEEP THEM.',
             'tagline': 'Same streets. New rules.',

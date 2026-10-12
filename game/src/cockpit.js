@@ -15,6 +15,9 @@ export const CABINS={
   wartruck:{eye:[-.45,2.38,-1.05],cut:[[-1.08,2,-1.97],[1.08,2.64,-.08]],width:1.9,floor:1.12,rear:-.2,roof:2.68,dash:[2.02,-1.74],screen:[-1.88,-1.8,2.09,2.68],wheel:[2.1,-1.4,.21,.75],style:'rig',badge:'88',plate:'WAR RIG'}
 };
 
+// A city's bonus vehicle brings its own cabin (config.json bonus_vehicles[].cabin).
+export function cabinOf(id){return CABINS[id]||VEHICLES[id]?.cabin||null;}
+
 function canvasTexture(width,height,draw){
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;draw(canvas.getContext('2d'),width,height);
   const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=4;return texture;
@@ -39,7 +42,10 @@ function dialAtlas(dials){
 }
 
 export function createCockpit(root,id,{weathering=null}={}){
-  const cabin=CABINS[id];if(!cabin)return null;
+  const cabin=cabinOf(id);if(!cabin)return null;
+  // 'epa': a cherished Swedish A-traktor — black plastic and velour instead of rust and rivets, red LED
+  // strips and fuzzy dice from the mirror.
+  const epa=cabin.style==='epa';
   const uniforms={cabinCut:{value:0},cabinInverse:{value:new THREE.Matrix4()},cabinMin:{value:new THREE.Vector3()},cabinMax:{value:new THREE.Vector3()}};
   if(cabin.cut){uniforms.cabinMin.value.fromArray(cabin.cut[0]);uniforms.cabinMax.value.fromArray(cabin.cut[1]);}
   // The player's car gets its own materials so the cut never reaches an opponent of the same model.
@@ -79,6 +85,11 @@ export function createCockpit(root,id,{weathering=null}={}){
     wireRed:standard('wire red',{color:0x8c2016,roughness:.55}),wireBlack:standard('wire black',{color:0x141312,roughness:.5}),wireYellow:standard('wire yellow',{color:0xb08a1c,roughness:.5}),
     mirror:standard('mirror',{color:0xffffff,roughness:.04,metalness:1,envMapIntensity:1.4})
   };
+  if(epa){
+    const plastic=standard('clean plastic',{color:0x121214,roughness:.62,metalness:.05,envMapIntensity:1.2});
+    M.plate=M.steel=M.rust=M.tape=plastic;M.leather=standard('clean velour',{color:0x1b1a20,roughness:.95,envMapIntensity:.8});
+    M.led=standard('clean LED lamp',{color:new THREE.Color(cabin.led||'#ff2a3a').multiplyScalar(.3),emissive:cabin.led||'#ff2a3a',emissiveIntensity:5,roughness:.3});
+  }
   for(const key of ['steel','plate','rust','leather','rubber','tape'])weatherMaterial(M[key],weathering,true);
 
   const group=new THREE.Group();group.name='Cockpit';group.visible=false;root.add(group);
@@ -87,7 +98,7 @@ export function createCockpit(root,id,{weathering=null}={}){
   const at=(m,x,y,z,rx=0,ry=0,rz=0)=>{m.position.set(x,y,z);m.rotation.set(rx,ry,rz);return m;};
   const pivot=(parent,x,y,z,rx=0,ry=0,rz=0)=>{const p=new THREE.Group();parent.add(p);return at(p,x,y,z,rx,ry,rz);};
   const tube=(points,radius,material,parent=group)=>mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p))),Math.max(8,points.length*8),radius,7,false),material,parent);
-  const rivets=(parent,from,to,count,radius=.0075)=>{for(let i=0;i<count;i++){const t=count>1?i/(count-1):.5;at(mesh(new THREE.SphereGeometry(radius,6,4),M.steel,parent),from[0]+(to[0]-from[0])*t,from[1]+(to[1]-from[1])*t,from[2]+(to[2]-from[2])*t);}};
+  const rivets=(parent,from,to,count,radius=.0075)=>{if(epa)return;for(let i=0;i<count;i++){const t=count>1?i/(count-1):.5;at(mesh(new THREE.SphereGeometry(radius,6,4),M.steel,parent),from[0]+(to[0]-from[0])*t,from[1]+(to[1]-from[1])*t,from[2]+(to[2]-from[2])*t);}};
 
   const w=cabin.width,hw=w/2,[eyeX,,eyeZ]=cabin.eye,[dashY,dashZ]=cabin.dash,floor=cabin.floor,rear=cabin.rear;
   const dashTop=dashY+.07,dashBack=dashZ+.17;
@@ -204,27 +215,29 @@ export function createCockpit(root,id,{weathering=null}={}){
       rivets(group,[side*(hw-.01)-side*.03,baseY+.04,baseZ+(topZ-baseZ)*.08],[side*(hw-.01)-side*.03,topY-.04,baseZ+(topZ-baseZ)*.92],5,.006);
       // Roll cage: up the pillar, along the roof edge, down behind the seats.
       const x=side*(hw-.07);
-      tube([[x,floor+.02,baseZ+.06],[x,baseY,baseZ+.05],[x,topY-.05,topZ+.06],[x,cabin.roof-.04,(topZ+rear)/2],[x,cabin.roof-.05,rear-.12],[x,floor+.05,rear-.15]],.019,M.rust);
+      if(!epa)tube([[x,floor+.02,baseZ+.06],[x,baseY,baseZ+.05],[x,topY-.05,topZ+.06],[x,cabin.roof-.04,(topZ+rear)/2],[x,cabin.roof-.05,rear-.12],[x,floor+.05,rear-.15]],.019,M.rust);
       at(mesh(new THREE.BoxGeometry(.05,.05,Math.abs(cabin.cut[1][2]-baseZ)),M.plate),side*(hw+.01),baseY,(baseZ+cabin.cut[1][2])/2);
     }
-    tube([[-hw+.07,cabin.roof-.05,rear-.12],[0,cabin.roof-.03,rear-.12],[hw-.07,cabin.roof-.05,rear-.12]],.019,M.rust);
-    tube([[-hw+.07,cabin.roof-.05,rear-.12],[hw-.07,floor+.1,rear-.15]],.016,M.rust);
-    at(mesh(new THREE.BoxGeometry(w+.1,.07,.1),M.rust),0,topY-.02,topZ);
+    if(!epa){
+      tube([[-hw+.07,cabin.roof-.05,rear-.12],[0,cabin.roof-.03,rear-.12],[hw-.07,cabin.roof-.05,rear-.12]],.019,M.rust);
+      tube([[-hw+.07,cabin.roof-.05,rear-.12],[hw-.07,floor+.1,rear-.15]],.016,M.rust);
+    }
+    at(mesh(new THREE.BoxGeometry(w+.1,epa?.03:.07,.1),epa?M.leather:M.rust),0,topY-(epa?.01:.02),topZ);
     rivets(group,[-hw+.06,topY-.055,topZ+.051],[hw-.06,topY-.055,topZ+.051],Math.round(w/.13));
     // Sun visor folded up against the header, out of the driver's sight line.
     visor=pivot(group,eyeX,topY-.04,topZ+.03,.12);
     at(mesh(new THREE.BoxGeometry(.32,.014,.14),M.leather,visor),0,0,.07);
     at(mesh(new THREE.BoxGeometry(.26,.003,.012),M.tape,visor),0,-.008,.1);
-    // Windscreen crack on the passenger side.
-    const t=.58,cz=baseZ+(topZ-baseZ)*t,cy=baseY+(topY-baseY)*t;
-    at(mesh(new THREE.PlaneGeometry(.42,.36),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false,opacity:.75,map:canvasTexture(256,256,(c)=>{
+    // Windscreen crack on the passenger side (not in a cherished EPA).
+    const t=epa?-1:.58,cz=baseZ+(topZ-baseZ)*t,cy=baseY+(topY-baseY)*t;
+    if(!epa)at(mesh(new THREE.PlaneGeometry(.42,.36),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false,opacity:.75,map:canvasTexture(256,256,(c)=>{
       c.strokeStyle='rgba(235,230,215,.85)';c.lineCap='round';let seed=7;const r=()=>(seed=(seed*16807)%2147483647)/2147483647;
       for(let k=0;k<11;k++){let x=128,y=128,a=k/11*Math.PI*2+r()*.4;c.lineWidth=2.2;c.beginPath();c.moveTo(x,y);for(let s=0;s<7;s++){a+=(r()-.5)*.7;x+=Math.cos(a)*(10+r()*16);y+=Math.sin(a)*(10+r()*16);c.lineTo(x,y);}c.stroke();}
       c.lineWidth=1.2;for(let ring=1;ring<4;ring++){c.beginPath();for(let k=0;k<=24;k++){const a=k/24*Math.PI*2,rr=ring*22+r()*8;c.lineTo(128+Math.cos(a)*rr,128+Math.sin(a)*rr);}c.stroke();}
     })}),group,false),hw*.48,cy,cz+.012,slope-Math.PI/2,0,.3);
   }
   // Rear-view mirror with a swinging skull on a cord.
-  const top=cabin.screen?cabin.screen[3]-.06:cabin.roof-.06,mirrorZ=cabin.screen?cabin.screen[1]+.09:dashZ+.12;
+  const top=cabin.screen?cabin.screen[3]-.06:cabin.roof-.06,mirrorZ=cabin.screen?cabin.screen[1]+(epa?.03:.09):dashZ+.12;
   at(mesh(new THREE.CylinderGeometry(.007,.007,.06,8),M.steel),0,top-.01,mirrorZ);
   const mirror=pivot(group,0,top-.05,mirrorZ+.01,-.1,.12);
   mesh(new THREE.BoxGeometry(.2,.06,.025),M.plate,mirror);
@@ -232,10 +245,26 @@ export function createCockpit(root,id,{weathering=null}={}){
   const charm=pivot(group,.05,top-.08,mirrorZ+.02);
   mesh(new THREE.CylinderGeometry(.0012,.0012,.11,4).translate(0,-.055,0),M.dark,charm,false);
   const skull=pivot(charm,0,-.125,0);
-  const cranium=new THREE.SphereGeometry(.022,14,10);cranium.scale(1,.95,1.08);mesh(cranium,M.bone,skull);
-  at(mesh(new THREE.BoxGeometry(.026,.016,.022),M.bone,skull),0,-.019,.004);
-  for(const s of [-1,1])at(mesh(new THREE.SphereGeometry(.0065,8,6),M.dark,skull),s*.0085,-.002,.019);
-  at(mesh(new THREE.BoxGeometry(.016,.004,.004),M.dark,skull),0,-.022,.016);
+  if(epa){
+    // Fuzzy dice: two plush cubes on cords of different length, pips on every face.
+    const dice=cabin.dice||'#f4f1ea',fur=standard('clean plush',{roughness:1,map:canvasTexture(256,256,(c,W,H)=>{
+      c.fillStyle=dice;c.fillRect(0,0,W,H);let seed=11;const r=()=>(seed=(seed*16807)%2147483647)/2147483647;
+      for(let i=0;i<2600;i++){c.strokeStyle=`rgba(${r()<.5?0:255},${r()<.5?0:255},${r()<.5?0:255},${.05+r()*.07})`;c.lineWidth=1+r()*1.5;const x=r()*W,y=r()*H,a=r()*Math.PI*2;c.beginPath();c.moveTo(x,y);c.lineTo(x+Math.cos(a)*6,y+Math.sin(a)*6);c.stroke();}
+      c.fillStyle='#111';for(const [x,y] of [[.25,.25],[.75,.75],[.5,.5],[.75,.25],[.25,.75]])if(r()<.85){c.beginPath();c.arc(x*W,y*H,22,0,Math.PI*2);c.fill();}
+    })});
+    for(const [dx,drop,turn] of [[-.016,0,.4],[.02,-.03,-.5]]){
+      if(drop)mesh(new THREE.CylinderGeometry(.0012,.0012,-drop,4).translate(dx,drop/2,0),M.dark,skull,false);
+      const die=new THREE.BoxGeometry(.042,.042,.042,3,3,3),pos=die.attributes.position;
+      // Pull the cube a third of the way towards a sphere: soft, stuffed edges.
+      for(let i=0;i<pos.count;i++){const v=new THREE.Vector3().fromBufferAttribute(pos,i),round=v.clone().setLength(.025);v.lerp(round,.35);pos.setXYZ(i,v.x,v.y,v.z);}
+      die.computeVertexNormals();at(mesh(die,fur,skull),dx,drop-.012,0,.3,turn,.2);
+    }
+  }else{
+    const cranium=new THREE.SphereGeometry(.022,14,10);cranium.scale(1,.95,1.08);mesh(cranium,M.bone,skull);
+    at(mesh(new THREE.BoxGeometry(.026,.016,.022),M.bone,skull),0,-.019,.004);
+    for(const s of [-1,1])at(mesh(new THREE.SphereGeometry(.0065,8,6),M.dark,skull),s*.0085,-.002,.019);
+    at(mesh(new THREE.BoxGeometry(.016,.004,.004),M.dark,skull),0,-.022,.016);
+  }
 
   // Door cards: riveted plates below the windows with a leather pull strap on the driver's door.
   const sill=cabin.screen?cabin.screen[2]:dashTop;
@@ -248,12 +277,43 @@ export function createCockpit(root,id,{weathering=null}={}){
   at(mesh(new THREE.BoxGeometry(.012,.022,.16),M.leather),-(hw-.02),sill-.07,eyeZ-.05);
   at(mesh(new THREE.BoxGeometry(.02,.03,.05),M.chrome),-(hw-.02),sill-.12,eyeZ-.2);
 
-  // Jury-rigged wiring under the dash and a taped splice.
+  // Jury-rigged wiring under the dash and a taped splice — or, in the EPA, red LED strips everywhere.
   const wireY=dashY-.13,wireZ=dashBack-.01;
-  tube([[eyeX-.22,wireY+.05,wireZ-.04],[eyeX-.08,wireY-.06,wireZ+.02],[eyeX+.1,wireY-.04,wireZ+.01],[consoleX-.08,wireY+.02,wireZ-.02]],.006,M.wireRed);
-  tube([[eyeX-.2,wireY+.04,wireZ-.05],[eyeX-.05,wireY-.08,wireZ+.03],[eyeX+.12,wireY-.05,wireZ],[consoleX-.08,wireY+.01,wireZ-.03]],.006,M.wireBlack);
-  tube([[eyeX-.18,wireY+.05,wireZ-.03],[eyeX,wireY-.05,wireZ+.04],[consoleX-.1,wireY-.01,wireZ]],.005,M.wireYellow);
-  at(mesh(new THREE.CylinderGeometry(.016,.016,.04,10),M.tape),eyeX-.06,wireY-.065,wireZ+.025,0,0,1.25);
+  if(epa){
+    // The 740's body is a solid shell up to the waist; its cabin is cut out down to the floor, so the
+    // cockpit brings carpet, a firewall and the two front seats in velour.
+    at(mesh(new THREE.BoxGeometry(w,.02,rear-dashZ+.3),M.leather),0,floor-.01,(dashZ+rear)/2);
+    at(mesh(new THREE.BoxGeometry(w,dashY-floor,.02),M.plate),0,(dashY+floor)/2,dashZ-.17);
+    for(const x of [eyeX,-eyeX]){
+      at(mesh(new THREE.BoxGeometry(.5,.14,.5),M.leather),x,floor+.2,eyeZ-.08);
+      at(mesh(new THREE.BoxGeometry(.5,.62,.12),M.leather),x,floor+.6,eyeZ+.2,-.2,0,0);
+      at(mesh(new THREE.BoxGeometry(.26,.16,.1),M.leather),x,floor+.98,eyeZ+.26,-.2,0,0);
+    }
+    const strip=(len,x,y,z,ry=0)=>at(mesh(new THREE.BoxGeometry(len,.008,.008),M.led),x,y,z,0,ry,0);
+    strip(w-.12,0,dashY-.16,dashBack+.005);                                        // under the dash lip
+    strip(w-.12,0,dashTop+.012,dashZ-.08);                                          // along the windscreen base
+    for(const side of [-1,1]){
+      strip(rear-dashZ-.2,side*(hw-.02),sill-.12,(dashZ+rear)/2,Math.PI/2);       // door cards
+      strip(.38,side*hw*.5,floor+.02,dashZ+.2);                                     // footwells
+      strip(.36,side*hw*.5,floor+.03,rear-.35);                                     // under the seats
+    }
+    strip(.5,consoleX,consoleTop+.004,dashZ+.45,Math.PI/2);                         // centre console
+    // Door speakers: a cone in a chrome ring, circled by an LED ring that pulses with the bass.
+    M.speakerLed=standard('clean speaker LED lamp',{color:new THREE.Color(cabin.speaker_led||'#2a9dff').multiplyScalar(.3),emissive:cabin.speaker_led||'#2a9dff',emissiveIntensity:4,roughness:.3});
+    for(const side of [-1,1]){
+      const x=side*(hw-.012),y=floor+.24,z=dashZ+.36;
+      at(mesh(new THREE.CylinderGeometry(.085,.085,.012,24).rotateZ(Math.PI/2),M.rubber),x,y,z);
+      at(mesh(new THREE.ConeGeometry(.07,.03,24,1,true).rotateZ(-side*Math.PI/2),M.plate),x-side*.012,y,z);
+      at(mesh(new THREE.TorusGeometry(.09,.005,6,32).rotateY(Math.PI/2),M.chrome),x-side*.004,y,z);
+      at(mesh(new THREE.TorusGeometry(.102,.005,6,32).rotateY(Math.PI/2),M.speakerLed),x-side*.004,y,z);
+    }
+  }
+  if(!epa)tube([[eyeX-.22,wireY+.05,wireZ-.04],[eyeX-.08,wireY-.06,wireZ+.02],[eyeX+.1,wireY-.04,wireZ+.01],[consoleX-.08,wireY+.02,wireZ-.02]],.006,M.wireRed);
+  if(!epa){
+    tube([[eyeX-.2,wireY+.04,wireZ-.05],[eyeX-.05,wireY-.08,wireZ+.03],[eyeX+.12,wireY-.05,wireZ],[consoleX-.08,wireY+.01,wireZ-.03]],.006,M.wireBlack);
+    tube([[eyeX-.18,wireY+.05,wireZ-.03],[eyeX,wireY-.05,wireZ+.04],[consoleX-.1,wireY-.01,wireZ]],.005,M.wireYellow);
+    at(mesh(new THREE.CylinderGeometry(.016,.016,.04,10),M.tape),eyeX-.06,wireY-.065,wireZ+.025,0,0,1.25);
+  }
 
   // Merge the fixed parts per material, within the group that moves them (dash, wheel, mirror...).
   const merge=container=>{
@@ -284,7 +344,7 @@ export function createCockpit(root,id,{weathering=null}={}){
       // The cut-away shell still fills the occlusion pass's depth; keep the whole car out of it.
       for(const m of body)m.userData.noOcclusion=on||occlusion.get(m);
     },
-    update(state,game={}){
+    update(state,game={},beat=0){
       if(!inside)return;
       const now=performance.now(),dt=last===null?0:Math.min(.05,(now-last)/1000);last=now;blink+=dt;
       uniforms.cabinInverse.value.copy(root.matrixWorld).invert();
@@ -309,6 +369,7 @@ export function createCockpit(root,id,{weathering=null}={}){
       }
       lastSpeed=speed;
       if((lcdClock+=dt)>.08){lcdClock=0;scroll+=2;drawRadio();}
+      if(M.speakerLed)M.speakerLed.emissiveIntensity=1+beat*7;
     }
   };
 }

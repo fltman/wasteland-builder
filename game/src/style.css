@@ -58,3 +58,5 @@
 .is-touch #mobile-hud-bar{height:calc(52px + env(safe-area-inset-top));padding-top:calc(4px + env(safe-area-inset-top));padding-bottom:4px}.is-touch #mobile-hud-bar .weapon-picker button{min-width:44px;min-height:44px}.is-touch #mobile-hud-bar .hud-actions button{min-height:44px;min-width:36px}.is-touch .hud-top{top:calc(60px + env(safe-area-inset-top))}.is-touch .radar{top:calc(64px + env(safe-area-inset-top))}
 @media(max-width:600px){.is-touch #mobile-hud-bar .hud-brand{display:none}.is-touch #mobile-hud-bar .hud-actions button{width:32px;min-width:32px;padding:4px 1px}.is-touch #mobile-hud-bar .weapon-picker button{padding:4px 2px}.is-touch #mobile-hud-bar .weapon-picker{justify-content:space-around}}
 .speed-panel #speed{display:flex;justify-content:flex-end}.speed-panel #speed .speed-digit{font:inherit;display:block;flex:0 0 33.333333%;width:33.333333%;text-align:center;letter-spacing:0}
+
+.vehicle.bonus span{color:#ff4a5a}.vehicle.bonus.active{color:#ff6b78}

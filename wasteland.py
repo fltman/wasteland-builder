@@ -260,6 +260,27 @@ def cmd_new(a):
     py('place.py', *args)
 
 
+def build_bonus_vehicles(slug):
+    """Blender-build the models of theme.json "bonus_vehicles" into build/vehicles/ (only when their look changed)."""
+    folder = CITIES / slug
+    theme = json.loads((folder / 'theme.json').read_text()) if (folder / 'theme.json').exists() else {}
+    for v in theme.get('bonus_vehicles') or []:
+        vid = re.sub(r'[^a-z0-9-]', '', str(v.get('id', '')).lower())
+        if not vid or v.get('model') != 'volvo740':
+            continue
+        out = folder / 'build' / 'vehicles'
+        out.mkdir(parents=True, exist_ok=True)
+        look = {k: v.get(k) for k in ('model', 'paint', 'rear_window', 'plate', 'dice', 'led', 'speaker_led', 'rims')}
+        script = PIPE / 'blender/build_bonus_car.py'
+        look['_builder'] = int(script.stat().st_mtime)
+        spec = out / f'{vid}.json'
+        if (out / f'{vid}.glb').exists() and spec.exists() and json.loads(spec.read_text()) == look:
+            continue
+        spec.write_text(json.dumps(look, ensure_ascii=False))
+        say(f'  building the bonus vehicle {vid} ({v.get("model")})')
+        blender('-b', '--factory-startup', '--python-exit-code', '1', '--python', script, '--', spec, out / f'{vid}.glb', out / f'{vid}.png')
+
+
 def cmd_build(a):
     slug = slug_of(a.slug)
     folder = CITIES / slug
@@ -290,6 +311,7 @@ def cmd_build(a):
         elif step == 'tiles':
             run([shutil.which('node') or 'node', PIPE / 'web/tiles.mjs', folder / 'build/raw', folder / 'pack/tiles'])
         elif step == 'pack':
+            build_bonus_vehicles(slug)
             py('make_pack.py', slug)
         elif step == 'splash':
             media = folder / 'media'
@@ -397,7 +419,8 @@ def cmd_voices(a):
 
 def cmd_music(a):
     slug = slug_of(a.slug)
-    music = CITIES / slug / 'media/music'
+    # --vehicle <id>: the radio of a bonus vehicle (plays while that car is chosen).
+    music = CITIES / slug / ('media/vehicles/' + re.sub(r'[^a-z0-9-]', '', a.vehicle.lower()) + '/music' if a.vehicle else 'media/music')
     music.mkdir(parents=True, exist_ok=True)
     meta_path = music / 'music.json'
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {'tracks': []}
@@ -415,6 +438,7 @@ def cmd_music(a):
         say('removed the city\'s own music (the default soundtrack plays)')
     for t in meta.get('tracks', []) if not a.clear else []:
         say(f'  ♪ {t["title"]}  {D}{t["file"]}{X}')
+    build_bonus_vehicles(slug)
     py('make_pack.py', slug)
 
 
@@ -542,6 +566,7 @@ def main():
     p.add_argument('--source', help='e.g. the suno.com song URL')
     p.add_argument('--generator', help='e.g. Suno v5')
     p.add_argument('--clear', action='store_true')
+    p.add_argument('--vehicle', help='a bonus vehicle id: its own radio (theme.json bonus_vehicles)')
     p.set_defaults(fn=cmd_music)
     p = sub.add_parser('buildings', help='list buildings for refinement')
     p.add_argument('slug', nargs='?')

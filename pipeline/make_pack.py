@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shutil
 
 from shapely.geometry import LineString, Point, Polygon, box
@@ -46,10 +47,59 @@ def dms(v, pos, neg):
     return f'{int(d)}°{int(round((d - int(d)) * 60)):02d}′ {pos if v >= 0 else neg}'
 
 
+# Bonus vehicles a city can add (theme.json "bonus_vehicles"): the model kind → its game spec and cabin,
+# in game coordinates (x right, y up, -z forward). pipeline/blender/build_bonus_car.py builds the model.
+BONUS_MODELS = {
+    'volvo740': {
+        'spec': {'name': 'EPA 740', 'number': '30', 'mass': 1350, 'crashResistance': .8, 'wheelbase': 2.77, 'maxSpeed': 34,
+                 'accel': 17, 'grip': 19, 'health': 105, 'damage': .95, 'length': 4.95, 'width': 1.95,
+                 'axle': [.765, 1.385], 'wheelRadius': .30, 'muzzle': [0, .6, -2.5], 'exhaust': [[-.55, .2, 2.66]],
+                 'headlights': [[-.55, .58, -2.4], [.55, .58, -2.4]],
+                 'beacon': [0, 1.335, .35],
+                 'description': 'Lowered Volvo 740 A-traktor. Red triangle, red LEDs, fuzzy dice. 30 km/h on paper.'},
+        'cabin': {'eye': [-.38, 1.08, .28], 'cut': [[-.86, .34, -.97], [.86, 1.29, 1.15]], 'width': 1.56, 'floor': .38,
+                  'rear': 1.0, 'roof': 1.3, 'dash': [.8, -.68], 'screen': [-.92, -.33, .89, 1.3], 'wheel': [.93, -.3, .19, .55],
+                  'style': 'epa', 'badge': '740', 'plate': 'EPA 740'},
+    },
+}
+
+
+def bonus_vehicles(theme, folder, pack):
+    """config.json entries for the city's bonus vehicles; copies their models and music into the pack."""
+    out, models = [], pack / 'vehicles'
+    shutil.rmtree(models, ignore_errors=True)
+    for v in theme.get('bonus_vehicles') or []:
+        kind, vid = BONUS_MODELS.get(v.get('model')), re.sub(r'[^a-z0-9-]', '', str(v.get('id', '')).lower())
+        glb = folder / 'build' / 'vehicles' / f'{vid}.glb'
+        if not kind or not vid or not glb.exists():
+            say(f'  ! bonus vehicle {v.get("id")!r} skipped (unknown model or not built: {glb.relative_to(folder)})')
+            continue
+        models.mkdir(exist_ok=True)
+        shutil.copy2(glb, models / f'{vid}.glb')
+        spec = {**kind['spec'], **{k: v[k] for k in ('name', 'number', 'description') if v.get(k)}}
+        cabin = {**kind['cabin'], **{k: v[k] for k in ('led', 'dice', 'speaker_led') if v.get(k)}}
+        entry = {'id': vid, 'model': f'city/vehicles/{vid}.glb', 'spec': spec, 'cabin': cabin, 'music': None}
+        music = folder / 'media' / 'vehicles' / vid / 'music'
+        tracks = sorted(music.glob('*.mp3')) if music.exists() else []
+        if tracks:
+            dest = pack / 'audio' / 'vehicles' / vid
+            dest.mkdir(parents=True, exist_ok=True)
+            meta = json.loads((music / 'music.json').read_text()) if (music / 'music.json').exists() else {'tracks': []}
+            known = {t['file']: t for t in meta.get('tracks', [])}
+            order = list(known)                                  # the order they were added in
+            tracks.sort(key=lambda t: (order.index(t.name) if t.name in known else len(order), t.name))
+            for t in tracks:
+                shutil.copy2(t, dest / t.name)
+            write_json(dest / 'music.json', {'tracks': [{**known.get(t.name, {}), 'file': t.name,
+                                                         'title': known.get(t.name, {}).get('title') or t.stem.replace('-', ' ').title()} for t in tracks]})
+            entry['music'] = f'city/audio/vehicles/{vid}/music.json'
+        out.append(entry)
+    return out
+
+
 def room_code(name):
     """The arena relay keeps only A–Z, 0–9 and '-': RÄTTVIK → RATTVIK, not RTTVIK. At most 11 characters,
     because the game puts a hidden 5-character map prefix in front (arena-client.js)."""
-    import re
     import unicodedata
     ascii_ = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().upper()
     return re.sub(r'[^A-Z0-9-]', '', ascii_)[:11] or 'WASTELAND'
@@ -241,6 +291,7 @@ def main(argv=None):
         'spawn': spawn, 'bounds': {'minX': -half - 30, 'maxX': half + 30, 'minZ': -half - 30, 'maxZ': half + 30},
         'labels': labels[:12], 'districts': districts, 'squares': squares, 'crates': crates, 'fires': fires,
         'splash': splash, 'voices': voices, 'music': 'city/audio/music.json' if (audio / 'music.json').exists() else None,
+        'bonus_vehicles': bonus_vehicles(theme, folder, pack),
         'attribution': attribution, 'center': place['center'],
     }
     write_json(pack / 'config.json', config)

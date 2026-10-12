@@ -22,7 +22,7 @@ Answer in the user's language.
 `doctor` (install/check everything) · `make "<place>"` (new + build + play) · `new "<place>" [--size small|medium|large|<m>] [--pick N] [--center lat,lon]`
 · `build <slug> [--from STEP | --only a,b] [--refresh]` with steps `fetch terrain prepare textures blender export tiles pack splash`
 · `rebuild <slug>` · `play <slug> [--open]` (dev server :5220, run in background) · `list` · `status <slug>`
-· `theme <slug>` · `voices <slug>` · `music <slug> --add f.mp3 --title …` · `buildings <slug> --street … | --near … [--json]`
+· `theme <slug>` · `voices <slug>` · `music <slug> [--vehicle <id>] --add f.mp3 --title …` · `buildings <slug> --street … | --near … [--json]`
 · `render <slug> [cameras | street:x,y,heading] [--street … | --near …]`
 · `survey <slug> plan [--street … | --near …] --out DIR` then `survey <slug> compare DIR` (Street View vs model, ids labelled)
 · `seed <slug> --ids … [--force] [--unsurveyed]` (housekit starter scripts from overrides notes) · `publish <slug> [--arena wss://…]`
@@ -68,6 +68,10 @@ Edit **sources**, never generated files: `theme.json`, `overrides.json`, `custom
   The game swaps tile materials for `materials.glb` entries by exact name (tiles.mjs keeps unique names).
 - Facade textures are one window bay × one storey; their alpha is a tint mask (wall = tinted per
   building through `extras.tint`, frames/glass = untinted). The game injects this in `src/city.js`.
+- Bonus cars: theme.json `bonus_vehicles` (e.g. `{"id":"epa","model":"volvo740","paint":…,"rear_window":…}`)
+  are built by `pipeline/blender/build_bonus_car.py` into `build/vehicles/<id>.glb` in the pack step and get
+  their own garage button; songs added with `music <slug> --vehicle <id>` play while that car is chosen.
+  Material names: "lamp" glows, "clean" skips grime, "paint" crumples, "speaker LED" pulses with the bass.
 - Meshes named `*Furniture*` become breakable props in the game; material names containing
   glass/wood/metal choose collision sounds. Keep these names when adding things.
 - Blender ≥ 4.2 (tested 5.2). In Eevee a world volume renders black — use a volume box for haze.
