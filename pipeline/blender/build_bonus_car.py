@@ -26,6 +26,7 @@ import math
 import sys
 from pathlib import Path
 
+import bmesh
 import bpy
 from mathutils import Vector
 
@@ -240,12 +241,12 @@ G = {
 }
 names = list(G)
 idx = {k: i for i, k in enumerate(names)}
-mesh_obj('EPA greenhouse paint', [G[k] for k in names], [
-    (idx['blf'], idx['brf'], idx['trf'], idx['tlf']),          # windscreen
-    (idx['tlf'], idx['trf'], idx['trr'], idx['tlr']),          # roof
-    (idx['brr'], idx['blr'], idx['tlr'], idx['trr']),          # rear window
-    (idx['brf'], idx['brr'], idx['trr'], idx['trf']),          # right side
-    (idx['blr'], idx['blf'], idx['tlf'], idx['tlr']),          # left side
+mesh_obj('EPA greenhouse paint', [G[k] for k in names], [     # wound to face outwards (single-sided)
+    (idx['tlf'], idx['trf'], idx['brf'], idx['blf']),          # windscreen
+    (idx['tlr'], idx['trr'], idx['trf'], idx['tlf']),          # roof
+    (idx['trr'], idx['tlr'], idx['blr'], idx['brr']),          # rear window
+    (idx['trf'], idx['trr'], idx['brr'], idx['brf']),          # right side
+    (idx['tlr'], idx['tlf'], idx['blf'], idx['blr']),          # left side
 ], PAINT, bevel=0.015)
 
 
@@ -475,6 +476,18 @@ root['vehicle_design_v3'] = True
 root['bonus_vehicle'] = 'volvo740'
 
 # ------------------------------------------------------------------------------------------ export
+# Materials are single-sided, so every closed part gets its normals turned outwards (open panels are
+# wound by hand or by outward()).
+for o in scene.objects:
+    if o.type != 'MESH':
+        continue
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    if bm.faces and all(e.is_manifold for e in bm.edges):
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(o.data)
+    bm.free()
+
 objects = [o for o in scene.objects]
 bpy.ops.object.select_all(action='DESELECT')
 for o in objects:
