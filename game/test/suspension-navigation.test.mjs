@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createCarState,VEHICLES} from '../src/physics.js';
-import {stepSuspension,wheelContacts,setGroundReference} from '../src/suspension.js';
+import {stepSuspension,wheelContacts,setGroundReference,followGround} from '../src/suspension.js';
 import {nearestDirections,directionBearing} from '../src/navigation.js';
 
 test('Suspension compresses on a bump, rebounds, and settles while separate wheels follow uneven ground',()=>{
@@ -46,4 +46,16 @@ test('Direction markers use only the closest three living enemies and closest ac
   assert.deepEqual(markers.map(m=>m.distance),[10,20,30,60]);assert.equal(markers[3].kind,'repair');
   assert.equal(directionBearing({x:0,z:0},{x:1,z:0},0),Math.PI/2);
   assert(Math.abs(directionBearing({x:0,z:0},{x:0,z:1},0))===Math.PI);
+});
+test('A fast car climbing a steep offroad slope never sinks below the ground it is probed against',()=>{
+  // The game probes the ground every 0.07 s; the slope below rises .45 m per metre (a coarse-terrain hill).
+  for(const speed of [8,15,22,30]){
+    const s=createCarState({y:0}),slope=.45,dt=.07;let x=0,lowest=Infinity;
+    for(let tick=0;tick<120;tick++){
+      const before=x;x+=speed*dt;
+      followGround(s,slope*x,x-before);
+      lowest=Math.min(lowest,s.y-slope*x);
+    }
+    assert(lowest>=-1e-6,`at ${speed} m/s the car sat ${(-lowest).toFixed(2)} m under the surface`);
+  }
 });
